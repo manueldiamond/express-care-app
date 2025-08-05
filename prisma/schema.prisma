@@ -1,0 +1,144 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  caregiver
+  patient
+}
+
+enum AuditAction {
+  CREATE_USER
+  UPDATE_USER
+  DELETE_USER
+  APPROVE_CAREGIVER
+  REJECT_CAREGIVER
+  APPROVE_VERIFICATION
+  REJECT_VERIFICATION
+  CREATE_ADMIN
+  ASSIGN_CAREGIVER
+  UNASSIGN_CAREGIVER
+  VIEW_USER_INFO
+  VIEW_ALL_PATIENTS
+  VIEW_ALL_CAREGIVERS
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String?
+  fullname     String
+  role         Role
+  photoUrl     String?
+  contact      String?
+  dateOfBirth  DateTime?
+  location     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  admin        Admin?
+  caregiver    CaregiverProfile?
+  patient      Patient?
+}
+
+model Admin {
+  id           Int      @id @default(autoincrement())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       Int      @unique
+  permissions  String[] // Array of permission strings
+  auditLogs    AuditLog[] @relation("AdminAuditLogs")
+  // add admin-specific fields here
+}
+
+model CaregiverProfile {
+  id             Int      @id @default(autoincrement())
+  user           User     @relation(fields: [userId], references: [id])
+  userId         Int      @unique
+  type           String?
+  isVerified     Boolean  @default(false)
+  isActive       Boolean  @default(false)
+  isAvailable    Boolean  @default(true)
+  schedule String?
+  bio String?
+  educationLevel String?
+  verification   Verification?
+  qualifications Qualification[]
+  assignments    Assignment[] @relation("CaregiverAssignments")
+} 
+
+model Qualification {
+  id                Int              @id @default(autoincrement())
+  caregiverProfile  CaregiverProfile @relation(fields: [caregiverProfileId], references: [id])
+  caregiverProfileId Int
+  title             String
+  fileURL           String
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model Verification {
+  id                Int              @id @default(autoincrement())
+  caregiverProfile  CaregiverProfile @relation(fields: [caregiverProfileId], references: [id])
+  caregiverProfileId Int             @unique
+  documentType      String
+  document          String
+  photo             String
+  isRejected        Boolean          @default(false)
+  approvedBy        Int?             // Admin ID who approved
+  approvedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+}
+
+model Patient {
+  id             Int      @id @default(autoincrement())
+  user           User     @relation(fields: [userId], references: [id])
+  userId         Int      @unique
+  medicalHistory String?
+  condition      String
+  years          String 
+  schedule       String
+  description    String?  @default("")
+  special        String?  @default("")
+  assignments    Assignment[] @relation("PatientAssignments")
+  // add patient-specific fields here
+}
+
+model Assignment {
+  id                Int              @id @default(autoincrement())
+  patient           Patient          @relation("PatientAssignments", fields: [patientId], references: [id])
+  patientId         Int
+  caregiver         CaregiverProfile @relation("CaregiverAssignments", fields: [caregiverId], references: [id])
+  caregiverId       Int
+  assignedBy        Int              // Admin ID who made the assignment
+  assignedAt        DateTime         @default(now())
+  status            String           @default("active") // active, completed, cancelled
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([patientId, caregiverId])
+}
+
+model AuditLog {
+  id          Int         @id @default(autoincrement())
+  admin       Admin       @relation("AdminAuditLogs", fields: [adminId], references: [id])
+  adminId     Int
+  action      AuditAction
+  targetUserId Int?       // User ID affected by the action
+  details     String      // JSON string with action details
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
+}
