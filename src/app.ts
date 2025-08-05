@@ -6,8 +6,9 @@ import caregiversRoutes from './routes/caregivers';
 import patientsRoutes from './routes/patients';
 import profileRoutes from './routes/profile';
 import adminRoutes from './routes/admin';
-import { requireAdmin, requireCaregiver, requirePatient } from './middleware/requireRole';
+import { requireAdmin } from './middleware/requireRole';
 import requireAuth from './middleware/requireAuth';
+import notificationRoutes from './routes/notifications';
 dotenv.config();
 
 const app = express();
@@ -26,10 +27,11 @@ app.use('/uploads', express.static('uploads'));
 
 app.use('/api', authRoutes);
 app.use('/api/caregivers', requireAuth, caregiversRoutes);
+
 app.use('/api/patients', requireAuth, patientsRoutes);
 app.use('/api/profile', requireAuth, profileRoutes);
 app.use('/api/admin', requireAdmin, adminRoutes);
-
+app.use('/api/notifications', requireAuth, notificationRoutes)
 
 app.get('/', (req, res) => {
   res.json({ message: 'Server up!' });

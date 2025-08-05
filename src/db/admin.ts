@@ -85,30 +85,47 @@ export async function deleteUser(userId: number): Promise<User> {
 }
 
 export async function approveCaregiver(caregiverId: number, adminId: number): Promise<CaregiverProfile> {
-  return await prisma.caregiverProfile.update({
+  const updatedCaregiver = await prisma.caregiverProfile.update({
     where: { id: caregiverId },
     data: {
       isVerified: true,
       isActive: true,
     },
   });
+  // Send notification to caregiver
+  await prisma.notification.create({
+    data: {
+      userId: updatedCaregiver.userId,
+      type: 'CAREGIVER_APPROVED',
+      message: 'Your caregiver profile has been approved by an admin.',
+    },
+  });
+  return updatedCaregiver;
 }
 
-export async function rejectCaregiver(caregiverId: number, adminId: number): Promise<CaregiverProfile> {
-  return await prisma.caregiverProfile.update({
+export async function deactivateCaregiver(caregiverId: number, adminId: number): Promise<CaregiverProfile> {
+  const updatedCaregiver = await prisma.caregiverProfile.update({
     where: { id: caregiverId },
     data: {
-      isVerified: false,
       isActive: false,
     },
   });
+  // Send notification to caregiver
+  await prisma.notification.create({
+    data: {
+      userId: updatedCaregiver.userId,
+      type: 'CAREGIVER_REJECTED',
+      message: 'Your caregiver profile has been rejected by an admin.',
+    },
+  });
+  return updatedCaregiver;
 }
 
 export async function approveVerification(verificationId: number, adminId: number): Promise<Verification> {
   return await prisma.verification.update({
     where: { id: verificationId },
     data: {
-      isApproved: true,
+      status: 'APPROVED',
       approvedBy: adminId,
       approvedAt: new Date(),
     },
@@ -119,7 +136,7 @@ export async function rejectVerification(verificationId: number, adminId: number
   return await prisma.verification.update({
     where: { id: verificationId },
     data: {
-      isApproved: false,
+      status: 'REJECTED',
       approvedBy: adminId,
       approvedAt: new Date(),
     },
@@ -287,4 +304,20 @@ export async function getAuditLogs(adminId?: number, limit: number = 100) {
     orderBy: { createdAt: 'desc' },
     take: limit,
   });
-} 
+}
+
+export async function notifyVerificationStatus(verificationId: number, status: string) {
+  const verification = await prisma.verification.findUnique({
+    where: { id: verificationId },
+    include: { caregiverProfile: true },
+  });
+  if (verification && verification.caregiverProfile) {
+    await prisma.notification.create({
+      data: {
+        userId: verification.caregiverProfile.userId,
+        type: `VERIFICATION_${status}`,
+        message: `Your verification has been ${status.toLowerCase()} by an admin.`,
+      },
+    });
+  }
+}

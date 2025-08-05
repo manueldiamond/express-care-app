@@ -274,3 +274,18 @@ export async function getQualificationById(qualificationId: number) {
     where: { id: qualificationId },
   });
 } 
+
+export async function getCaregiverActiveStatus(caregiverId: number) {
+  const caregiver = await prisma.caregiverProfile.findUnique({
+    where: { id: caregiverId },
+    select: { isActive: true }
+  });
+  return caregiver?.isActive || false;
+}
+
+export async function setCaregiverActiveStatus(caregiverId: number, isActive: boolean) {
+  return await prisma.caregiverProfile.update({
+    where: { id: caregiverId },
+    data: { isActive }
+  });
+}

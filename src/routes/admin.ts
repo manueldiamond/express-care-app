@@ -6,7 +6,7 @@ import {
   getUserByIdForAdmin,
   deleteUser,
   approveCaregiver,
-  rejectCaregiver,
+  deactivateCaregiver,
   approveVerification,
   rejectVerification,
   getAllPatientsForAdmin,
@@ -23,6 +23,7 @@ import { getFilteredCaregivers } from '../db/caregiver';
 import { createUser } from '../db/user';
 import { AuditAction } from '@prisma/client';
 import { z } from 'zod';
+import { sendNotification } from '../socket/notifications';
 
 const router = Router();
 
@@ -252,6 +253,8 @@ router.post('/caregivers/:caregiverId/approve', requireAuth, requireAdmin, async
 
   try {
     const approvedCaregiver = await approveCaregiver(caregiverId, req.user.userId);
+    // Send notification to caregiver
+    await sendNotification(approvedCaregiver.userId, 'CAREGIVER_APPROVED', 'Your caregiver profile has been approved by an admin.');
     console.log('[ADMIN] POST /caregivers/:caregiverId/approve - Caregiver approved successfully', { caregiverId });
     
     await logAdminAction(req, AuditAction.APPROVE_CAREGIVER, approvedCaregiver.userId, { 
@@ -276,7 +279,9 @@ router.post('/caregivers/:caregiverId/reject', requireAuth, requireAdmin, async 
   });
 
   try {
-    const rejectedCaregiver = await rejectCaregiver(caregiverId, req.user.userId);
+    const rejectedCaregiver = await deactivateCaregiver(caregiverId, req.user.userId);
+    // Send notification to caregiver
+    await sendNotification(rejectedCaregiver.userId, 'CAREGIVER_REJECTED', 'Your caregiver profile has been rejected by an admin.');
     console.log('[ADMIN] POST /caregivers/:caregiverId/reject - Caregiver rejected successfully', { caregiverId });
     
     await logAdminAction(req, AuditAction.REJECT_CAREGIVER, rejectedCaregiver.userId, { 
@@ -302,6 +307,11 @@ router.post('/verifications/:verificationId/approve', requireAuth, requireAdmin,
 
   try {
     const approvedVerification = await approveVerification(verificationId, req.user.userId);
+    // Get caregiver userId from verification
+    const caregiverUserId = approvedVerification.caregiverProfileId ? (await getUserIdFromCaregiverProfile(approvedVerification.caregiverProfileId)) : null;
+    if (caregiverUserId) {
+      await sendNotification(caregiverUserId, 'VERIFICATION_APPROVED', 'Your verification has been approved by an admin.');
+    }
     console.log('[ADMIN] POST /verifications/:verificationId/approve - Verification approved successfully', { verificationId });
     
     await logAdminAction(req, AuditAction.APPROVE_VERIFICATION, null, { 
@@ -327,6 +337,11 @@ router.post('/verifications/:verificationId/reject', requireAuth, requireAdmin, 
 
   try {
     const rejectedVerification = await rejectVerification(verificationId, req.user.userId);
+    // Get caregiver userId from verification
+    const caregiverUserId = rejectedVerification.caregiverProfileId ? (await getUserIdFromCaregiverProfile(rejectedVerification.caregiverProfileId)) : null;
+    if (caregiverUserId) {
+      await sendNotification(caregiverUserId, 'VERIFICATION_REJECTED', 'Your verification has been rejected by an admin.');
+    }
     console.log('[ADMIN] POST /verifications/:verificationId/reject - Verification rejected successfully', { verificationId });
     
     await logAdminAction(req, AuditAction.REJECT_VERIFICATION, null, { 
@@ -524,4 +539,10 @@ router.get('/audit-logs', requireAuth, requireAdmin, async (req: Request & { use
   }
 });
 
-export default router; 
+// Helper to get userId from caregiverProfileId
+async function getUserIdFromCaregiverProfile(caregiverProfileId: number): Promise<number | null> {
+  const caregiverProfile = await import('../db/prisma').then(m => m.default.caregiverProfile.findUnique({ where: { id: caregiverProfileId } }));
+  return caregiverProfile?.userId || null;
+}
+
+export default router;

@@ -3,31 +3,51 @@ import { Role, User as PrismaUser } from '@prisma/client';
 
 type User = PrismaUser;
 
-export async function createUser(email: string, passwordHash: string, fullname: string, role: Role): Promise<User> {
+export async function createUser(
+  email: string,
+  passwordHash: string,
+  fullname: string,
+  role: Role
+): Promise<User & { patient?: any; caregiver?: any; admin?: any }> {
   return await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: { email, passwordHash, fullname, role },
     });
 
-    // Depending on the role, create an empty patient or caregiver profile
+    let patient = null;
+    let caregiver = null;
+    let admin = null;
+
     if (role === 'patient') {
-      await tx.patient.create({
+      patient = await tx.patient.create({
         data: {
           userId: user.id,
           condition: '', // required fields, set to empty string
           years: '',
-          schedule: ''
+          schedule: '',
         },
       });
     } else if (role === 'caregiver') {
-      await tx.caregiverProfile.create({
+      caregiver = await tx.caregiverProfile.create({
         data: {
           userId: user.id,
         },
       });
+    } else if (role === 'admin') {
+      admin = await tx.admin.create({
+        data: {
+          userId: user.id,
+          permissions: [], // default to empty permissions
+        },
+      });
     }
 
-    return user;
+    return {
+      ...user,
+      patient,
+      caregiver,
+      admin,
+    };
   });
 }
 
@@ -45,6 +65,7 @@ export async function getUserWithProfiles(userId: number) {
     include: {
       caregiver: true,
       patient: true,
+      admin:true,
     },
   });
 }
