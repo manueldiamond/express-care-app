@@ -65,6 +65,7 @@ model Admin {
   userId      Int        @unique
   permissions String[] // Array of permission strings
   auditLogs   AuditLog[] @relation("AdminAuditLogs")
+  approvedVerifications Verification[] @relation("AdminVerificationApprovedBy")
   // add admin-specific fields here
 }
 
@@ -102,7 +103,8 @@ model Verification {
   document           String
   photo              String
   status             VerificationStatus @default(PENDING)
-  approvedBy         Int? // Admin ID who approved
+  approvedByAdmin    Admin? @relation(fields: [approvedBy], references: [id], name: "AdminVerificationApprovedBy")
+  approvedBy         Int?
   approvedAt         DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt

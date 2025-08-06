@@ -32,6 +32,7 @@ const storage = multer.diskStorage({
 export const upload = multer({ storage });
 
 export function getPublicUrl(req: Request, relativePath: string): string {
+  if(!relativePath) return relativePath;
   const protocol = req.protocol;
   const host = req.get('host');
   return `${protocol}://${host}${relativePath}`;

@@ -67,11 +67,18 @@ export async function createVerification(caregiverProfileId: number, data: {
   document: string;
   photo: string;
 }): Promise<Verification> {
-  return await prisma.verification.create({
-    data: {
-      caregiverProfileId,
-      ...data,
-    },
+  return await prisma.$transaction(async (tx) => {
+    // Delete existing verification for this caregiver, if any
+    await tx.verification.deleteMany({
+      where: { caregiverProfileId },
+    });
+    // Create new verification
+    return await tx.verification.create({
+      data: {
+        caregiverProfileId,
+        ...data,
+      },
+    });
   });
 }
 

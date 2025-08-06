@@ -30,7 +30,7 @@ app.use('/api/caregivers', requireAuth, caregiversRoutes);
 
 app.use('/api/patients', requireAuth, patientsRoutes);
 app.use('/api/profile', requireAuth, profileRoutes);
-app.use('/api/admin', requireAdmin, adminRoutes);
+app.use('/api/admin',requireAuth, requireAdmin, adminRoutes);
 app.use('/api/notifications', requireAuth, notificationRoutes)
 
 app.get('/', (req, res) => {

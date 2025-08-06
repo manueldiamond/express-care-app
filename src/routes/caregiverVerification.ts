@@ -4,6 +4,7 @@ import { verificationSchema } from '../zod/profileSchemas';
 import { getPublicUrl, upload, handleFileUpload } from '../db/storage';
 import { requireCaregiver } from '../middleware/requireRole';
 import { z } from 'zod';
+import { sendNotification } from '../socket/notifications';
 
 const router = Router();
 
@@ -139,6 +140,7 @@ router.post('/', requireCaregiver, upload.fields([
       caregiverProfileId: verification.caregiverProfileId 
     });
 
+    await sendNotification(req.user?.userId, "CAREGIVER_VERIFICATION_CREATED", "Your caregiver verification has been submitted for review.");
     // Return the verification with public URLs
     const response = {
       ...verification,

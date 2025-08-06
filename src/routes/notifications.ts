@@ -4,7 +4,6 @@ import prisma from '../db/prisma';
 
 const notificationRoutes = Router();
 
-// Get current user's notifications
 // Get current user's unread notifications
 notificationRoutes.get('/', requireAuth, async (req: Request & { user?: any }, res: Response) => {
     const userId = req.user?.userId;
@@ -20,10 +19,14 @@ notificationRoutes.get('/', requireAuth, async (req: Request & { user?: any }, r
     }
 });
 
-// Get all notifications (no userId checks)
-notificationRoutes.get('/all', async (req: Request, res: Response) => {
+// Get all notifications for current user
+notificationRoutes.get('/all', requireAuth, async (req: Request & { user?: any }, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
     try {
         const notifications = await prisma.notification.findMany({
+            where: { userId },
             orderBy: { createdAt: 'desc' },
         });
         res.json(notifications);

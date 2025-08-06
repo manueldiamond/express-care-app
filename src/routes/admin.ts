@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import requireAuth from '../middleware/requireAuth';
 import { requireAdmin } from '../middleware/requireRole';
 import { 
   getAllUsersForAdmin,
@@ -17,13 +16,30 @@ import {
   createAuditLog,
   getAuditLogs,
   createAdmin,
-  getAllAdmins
+  getAllAdmins,
+  getCaregiverById,
+  getPatientById,
+  getAllAssignments,
+  getAllVerifications,
+  getDashboardStats,
+  getReports
 } from '../db/admin';
 import { getFilteredCaregivers } from '../db/caregiver';
 import { createUser } from '../db/user';
-import { AuditAction } from '@prisma/client';
+import { AuditAction, CaregiverProfile, Patient, Qualification, User, Verification } from '@prisma/client';
 import { z } from 'zod';
 import { sendNotification } from '../socket/notifications';
+import { prisma } from '../db';
+import { getPublicUrl } from '../db/storage';
+
+import {
+  mapCaregiverWithPhoto,
+  mapPatientWithPhoto,
+  mapQualificationWithPhoto,
+  mapUserWithPhoto,
+  mapVerificationWithPhoto
+} from '../utils/publicUrlMappings'
+
 
 const router = Router();
 
@@ -36,7 +52,7 @@ async function logAdminAction(
 ) {
   try {
     await createAuditLog(
-      req.user.userId,
+      req.user.adminId,
       action,
       targetUserId,
       details,
@@ -49,7 +65,7 @@ async function logAdminAction(
 }
 
 // Create new user (admin only)
-router.post('/users', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/users',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] POST /users - Admin creating new user', { 
     adminId: req.user?.userId,
     body: req.body,
@@ -84,22 +100,50 @@ router.post('/users', requireAuth, requireAdmin, async (req: Request & { user?: 
   }
 });
 
-// Get all users (admin only)
-router.get('/users', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+// Get all users (admin only, paginated)
+router.get('/users', async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /users - Admin requesting all users', { 
     adminId: req.user?.userId,
-    ip: req.ip
+    ip: req.ip,
+    query: req.query
   });
 
+  // Extract pagination and filter params
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const search = req.query.search as string || '';
+  const role = (req.query.role as 'all' | 'admin' | 'caregiver' | 'patient') || 'all';
+  const status = (req.query.status as 'all' | 'active' | 'inactive') || 'all';
+
   try {
-    const users = await getAllUsersForAdmin();
-    console.log('[ADMIN] GET /users - Retrieved all users successfully', { 
-      count: users.length 
+    const { users, total, totalPages } = await getAllUsersForAdmin({
+      page,
+      limit,
+      search,
+      role,
+      status,
     });
-    
-    await logAdminAction(req, AuditAction.VIEW_USER_INFO, null, { action: 'view_all_users', count: users.length });
-    
-    res.json(users);
+
+    console.log('[ADMIN] GET /users - Retrieved paginated users', { 
+      count: users.length, total, page, limit, totalPages
+    });
+
+    logAdminAction(req, AuditAction.VIEW_USER_INFO, null, { 
+      action: 'view_all_users',
+      count: users.length,
+      page,
+      limit,
+      total,
+      totalPages
+    });
+
+    res.json({
+      data: users,
+      total,
+      page,
+      limit,
+      totalPages
+    });
   } catch (error) {
     console.log('[ADMIN] GET /users - Error retrieving users', { error });
     res.status(500).json({ error: 'Failed to retrieve users' });
@@ -107,7 +151,7 @@ router.get('/users', requireAuth, requireAdmin, async (req: Request & { user?: a
 });
 
 // Get specific user (admin only)
-router.get('/users/:userId', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get('/users/:userId',   async (req: Request & { user?: any }, res: Response) => {
   const userId = parseInt(req.params.userId);
   console.log('[ADMIN] GET /users/:userId - Admin requesting user details', { 
     adminId: req.user?.userId,
@@ -125,7 +169,7 @@ router.get('/users/:userId', requireAuth, requireAdmin, async (req: Request & { 
     console.log('[ADMIN] GET /users/:userId - Retrieved user successfully', { userId });
     await logAdminAction(req, AuditAction.VIEW_USER_INFO, userId, { action: 'view_user_details' });
     
-    res.json(user);
+    res.json(mapUserWithPhoto(req, user));
   } catch (error) {
     console.log('[ADMIN] GET /users/:userId - Error retrieving user', { error, userId });
     res.status(500).json({ error: 'Failed to retrieve user' });
@@ -133,7 +177,7 @@ router.get('/users/:userId', requireAuth, requireAdmin, async (req: Request & { 
 });
 
 // Update user (admin only)
-router.put('/users/:userId', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.put('/users/:userId',   async (req: Request & { user?: any }, res: Response) => {
   const userId = parseInt(req.params.userId);
   console.log('[ADMIN] PUT /users/:userId - Admin updating user', { 
     adminId: req.user?.userId,
@@ -160,7 +204,7 @@ router.put('/users/:userId', requireAuth, requireAdmin, async (req: Request & { 
 });
 
 // Delete user (admin only)
-router.delete('/users/:userId', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.delete('/users/:userId',   async (req: Request & { user?: any }, res: Response) => {
   const userId = parseInt(req.params.userId);
   console.log('[ADMIN] DELETE /users/:userId - Admin deleting user', { 
     adminId: req.user?.userId,
@@ -182,21 +226,46 @@ router.delete('/users/:userId', requireAuth, requireAdmin, async (req: Request &
 });
 
 // Get all patients (admin only)
-router.get('/patients', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get('/patients',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /patients - Admin requesting all patients', { 
     adminId: req.user?.userId,
     ip: req.ip
   });
 
+  // Extract pagination and filter params
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const search = req.query.search as string || '';
+  const status = (req.query.status as 'all' | 'active' | 'inactive') || 'all';
+
   try {
-    const patients = await getAllPatientsForAdmin();
-    console.log('[ADMIN] GET /patients - Retrieved all patients successfully', { 
-      count: patients.length 
+    const { patients, total, totalPages } = await getAllPatientsForAdmin({
+      page,
+      limit,
+      search,
+      status,
     });
-    
-    await logAdminAction(req, AuditAction.VIEW_ALL_PATIENTS, null, { action: 'view_all_patients', count: patients.length });
-    
-    res.json(patients);
+
+    console.log('[ADMIN] GET /patients - Retrieved paginated patients', {
+      count: patients.length, total, page, limit, totalPages
+    });
+
+    await logAdminAction(req, AuditAction.VIEW_ALL_PATIENTS, null, {
+      action: 'view_all_patients',
+      count: patients.length,
+      page,
+      limit,
+      total,
+      totalPages
+    });
+
+    res.json({
+      data: patients.map(p => mapPatientWithPhoto(req, p)),
+      total,
+      page,
+      limit,
+      totalPages
+    });
   } catch (error) {
     console.log('[ADMIN] GET /patients - Error retrieving patients', { error });
     res.status(500).json({ error: 'Failed to retrieve patients' });
@@ -204,38 +273,47 @@ router.get('/patients', requireAuth, requireAdmin, async (req: Request & { user?
 });
 
 // Get all caregivers (admin only) - Enhanced with filtering
-router.get('/caregivers', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get('/caregivers',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /caregivers - Admin requesting caregivers', { 
     adminId: req.user?.userId,
     ip: req.ip,
     query: req.query
   });
 
-  // Extract query parameters
-  const search = req.query.search as string;
-  const viewing = (req.query.viewing as 'available' | 'all') || 'all';
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-
-  console.log('[ADMIN] GET /caregivers - Applying filters', { 
-    search,
-    viewing,
-    limit
-  });
+  // Extract pagination and filter params
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const search = req.query.search as string || '';
+  const status = (req.query.status as 'all' | 'active' | 'inactive') || 'all';
 
   try {
-    const caregivers = await getFilteredCaregivers(search, viewing, true, limit); // isAdmin = true
-    console.log('[ADMIN] GET /caregivers - Retrieved filtered caregivers successfully', { 
-      count: caregivers.length,
-      filters: { search, viewing, limit }
+    const { caregivers, total, totalPages } = await getAllCaregiversForAdmin({
+      page,
+      limit,
+      search,
+      status,
     });
-    
+
+    console.log('[ADMIN] GET /caregivers - Retrieved paginated caregivers', { 
+      count: caregivers.length, total, page, limit, totalPages
+    });
+
     await logAdminAction(req, AuditAction.VIEW_ALL_CAREGIVERS, null, { 
-      action: 'view_all_caregivers', 
+      action: 'view_all_caregivers',
       count: caregivers.length,
-      filters: { search, viewing, limit }
+      page,
+      limit,
+      total,
+      totalPages
     });
-    
-    res.json(caregivers);
+
+    res.json({
+      data: caregivers.map(c => mapCaregiverWithPhoto(req, c)),
+      total,
+      page,
+      limit,
+      totalPages
+    });
   } catch (error) {
     console.log('[ADMIN] GET /caregivers - Error retrieving caregivers', { error });
     res.status(500).json({ error: 'Failed to retrieve caregivers' });
@@ -243,7 +321,7 @@ router.get('/caregivers', requireAuth, requireAdmin, async (req: Request & { use
 });
 
 // Approve caregiver (admin only)
-router.post('/caregivers/:caregiverId/approve', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/caregivers/:caregiverId/approve',   async (req: Request & { user?: any }, res: Response) => {
   const caregiverId = parseInt(req.params.caregiverId);
   console.log('[ADMIN] POST /caregivers/:caregiverId/approve - Admin approving caregiver', { 
     adminId: req.user?.userId,
@@ -270,7 +348,7 @@ router.post('/caregivers/:caregiverId/approve', requireAuth, requireAdmin, async
 });
 
 // Reject caregiver (admin only)
-router.post('/caregivers/:caregiverId/reject', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/caregivers/:caregiverId/reject',   async (req: Request & { user?: any }, res: Response) => {
   const caregiverId = parseInt(req.params.caregiverId);
   console.log('[ADMIN] POST /caregivers/:caregiverId/reject - Admin rejecting caregiver', { 
     adminId: req.user?.userId,
@@ -297,7 +375,7 @@ router.post('/caregivers/:caregiverId/reject', requireAuth, requireAdmin, async 
 });
 
 // Approve verification (admin only)
-router.post('/verifications/:verificationId/approve', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/verifications/:verificationId/approve',   async (req: Request & { user?: any }, res: Response) => {
   const verificationId = parseInt(req.params.verificationId);
   console.log('[ADMIN] POST /verifications/:verificationId/approve - Admin approving verification', { 
     adminId: req.user?.userId,
@@ -327,7 +405,7 @@ router.post('/verifications/:verificationId/approve', requireAuth, requireAdmin,
 });
 
 // Reject verification (admin only)
-router.post('/verifications/:verificationId/reject', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/verifications/:verificationId/reject',   async (req: Request & { user?: any }, res: Response) => {
   const verificationId = parseInt(req.params.verificationId);
   console.log('[ADMIN] POST /verifications/:verificationId/reject - Admin rejecting verification', { 
     adminId: req.user?.userId,
@@ -357,7 +435,7 @@ router.post('/verifications/:verificationId/reject', requireAuth, requireAdmin, 
 });
 
 // Assign caregiver to patient (admin only)
-router.post('/assignments', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/assignments',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] POST /assignments - Admin creating assignment', { 
     adminId: req.user?.userId,
     body: req.body,
@@ -394,7 +472,7 @@ router.post('/assignments', requireAuth, requireAdmin, async (req: Request & { u
 });
 
 // Unassign caregiver from patient (admin only)
-router.delete('/assignments/:caregiverId/:patientId', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.delete('/assignments/:caregiverId/:patientId',   async (req: Request & { user?: any }, res: Response) => {
   const caregiverId = parseInt(req.params.caregiverId);
   const patientId = parseInt(req.params.patientId);
   
@@ -428,7 +506,7 @@ router.delete('/assignments/:caregiverId/:patientId', requireAuth, requireAdmin,
 });
 
 // Get assignments for a patient (admin only)
-router.get('/patients/:patientId/assignments', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get('/patients/:patientId/assignments',   async (req: Request & { user?: any }, res: Response) => {
   const patientId = parseInt(req.params.patientId);
   console.log('[ADMIN] GET /patients/:patientId/assignments - Admin requesting patient assignments', { 
     adminId: req.user?.userId,
@@ -457,7 +535,7 @@ router.get('/patients/:patientId/assignments', requireAuth, requireAdmin, async 
 });
 
 // Create new admin (admin only)
-router.post('/admins', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.post('/admins',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] POST /admins - Admin creating new admin', { 
     adminId: req.user?.userId,
     body: req.body,
@@ -492,7 +570,7 @@ router.post('/admins', requireAuth, requireAdmin, async (req: Request & { user?:
 });
 
 // Get all admins (admin only)
-router.get('/admins', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get('/admins',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /admins - Admin requesting all admins', { 
     adminId: req.user?.userId,
     ip: req.ip
@@ -517,7 +595,7 @@ router.get('/admins', requireAuth, requireAdmin, async (req: Request & { user?: 
 });
 
 // Get audit logs (admin only)
-router.get('/audit-logs', requireAuth, requireAdmin, async (req: Request & { user?: any }, res: Response) => {
+router.get('/audit-logs',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /audit-logs - Admin requesting audit logs', { 
     adminId: req.user?.userId,
     ip: req.ip
@@ -539,10 +617,158 @@ router.get('/audit-logs', requireAuth, requireAdmin, async (req: Request & { use
   }
 });
 
+// Get single caregiver by ID
+router.get('/caregivers/:caregiverId',   async (req: Request & { user?: any }, res: Response) => {
+  const caregiverId = parseInt(req.params.caregiverId);
+  console.log('[ADMIN] GET /caregivers/:caregiverId - Admin requesting caregiver', { 
+    adminId: req.user?.userId,
+    caregiverId,
+    ip: req.ip
+  });
+  try {
+    let caregiver = await getCaregiverById(caregiverId);
+    caregiver = mapCaregiverWithPhoto(req, caregiver);
+    if (!caregiver) {
+      console.log('[ADMIN] GET /caregivers/:caregiverId - Caregiver not found', { caregiverId });
+      return res.status(404).json({ error: 'Caregiver not found' });
+    }
+    console.log('[ADMIN] GET /caregivers/:caregiverId - Caregiver retrieved', { caregiverId });
+    res.json(caregiver);
+  } catch (error) {
+    console.log('[ADMIN] GET /caregivers/:caregiverId - Error fetching caregiver', { error, caregiverId });
+    res.status(500).json({ error: 'Failed to fetch caregiver' });
+  }
+});
+
+// Get single patient by ID
+router.get('/patients/:patientId',   async (req: Request & { user?: any }, res: Response) => {
+  const patientId = parseInt(req.params.patientId);
+  console.log('[ADMIN] GET /patients/:patientId - Admin requesting patient', { 
+    adminId: req.user?.userId,
+    patientId,
+    ip: req.ip
+  });
+  try {
+    let patient = await getPatientById(patientId);
+    patient = mapPatientWithPhoto(req, patient);
+    if (!patient) {
+      console.log('[ADMIN] GET /patients/:patientId - Patient not found', { patientId });
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    console.log('[ADMIN] GET /patients/:patientId - Patient retrieved', { patientId });
+    res.json(patient);
+  } catch (error) {
+    console.log('[ADMIN] GET /patients/:patientId - Error fetching patient', { error, patientId });
+    res.status(500).json({ error: 'Failed to fetch patient' });
+  }
+});
+
+// Get all assignments
+router.get('/assignments',   async (req: Request & { user?: any }, res: Response) => {
+  console.log('[ADMIN] GET /assignments - Admin requesting all assignments', { 
+    adminId: req.user?.userId,
+    ip: req.ip
+  });
+  try {
+    let assignments = await getAllAssignments();
+    //assignments = mapAssignmentsWithPhoto(req, assignments);
+    console.log('[ADMIN] GET /assignments - Assignments retrieved', { count: assignments.length });
+    res.json(assignments);
+  } catch (error) {
+    console.log('[ADMIN] GET /assignments - Error fetching assignments', { error });
+    res.status(500).json({ error: 'Failed to fetch assignments' });
+  }
+});
+
+// Get all verifications (admin only, paginated)
+router.get('/verifications', async (req: Request & { user?: any }, res: Response) => {
+  console.log('[ADMIN] GET /verifications - Admin requesting all verifications', { 
+    adminId: req.user?.userId,
+    ip: req.ip,
+    query: req.query
+  });
+
+  // Extract pagination and filter params
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const search = req.query.search as string || '';
+  const type = (req.query.type as string) || 'all';
+  const status = (req.query.status as string) || 'all';
+
+  try {
+    const { verifications, total, totalPages } = await getAllVerifications({
+      page,
+      limit,
+      search,
+      type,
+      status,
+    });
+
+    console.log('[ADMIN] GET /verifications - Retrieved paginated verifications', { 
+      count: verifications.length, total, page, limit, totalPages
+    });
+
+    logAdminAction(req, AuditAction.VIEW_USER_INFO, null, { 
+      action: 'view_all_verifications',
+      count: verifications.length,
+      page,
+      limit,
+      total,
+      totalPages
+    });
+
+    res.json({
+      data: verifications.map(v => mapVerificationWithPhoto(req, v)),
+      total,
+      page,
+      limit,
+      totalPages
+    });
+  } catch (error) {
+    console.log('[ADMIN] GET /verifications - Error fetching verifications', { error });
+    res.status(500).json({ error: 'Failed to fetch verifications' });
+  }
+});
+
+// Dashboard stats
+router.get('/dashboard/stats',   async (req: Request & { user?: any }, res: Response) => {
+  console.log('[ADMIN] GET /dashboard/stats - Admin requesting dashboard stats', { 
+    adminId: req.user?.userId,
+    ip: req.ip
+  });
+  try {
+    let stats = await getDashboardStats();
+    console.log('[ADMIN] GET /dashboard/stats - Stats retrieved');
+    res.json(stats);
+  } catch (error) {
+    console.log('[ADMIN] GET /dashboard/stats - Error fetching stats', { error });
+    res.status(500).json({ error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+// Reports
+router.get('/reports',   async (req: Request & { user?: any }, res: Response) => {
+  console.log('[ADMIN] GET /reports - Admin requesting reports', { 
+    adminId: req.user?.userId,
+    ip: req.ip
+  });
+  try {
+    let reports = await getReports();
+    console.log('[ADMIN] GET /reports - Reports retrieved', { count: reports?.length });
+    res.json(reports);
+  } catch (error) {
+    console.log('[ADMIN] GET /reports - Error fetching reports', { error });
+    res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
 // Helper to get userId from caregiverProfileId
 async function getUserIdFromCaregiverProfile(caregiverProfileId: number): Promise<number | null> {
-  const caregiverProfile = await import('../db/prisma').then(m => m.default.caregiverProfile.findUnique({ where: { id: caregiverProfileId } }));
-  return caregiverProfile?.userId || null;
+  console.log('[ADMIN] getUserIdFromCaregiverProfile - Fetching userId for caregiverProfileId', { caregiverProfileId });
+  const caregiverProfile = await prisma.caregiverProfile.findUnique({ where: { id: caregiverProfileId } });
+  const userId = caregiverProfile?.userId || null;
+  console.log('[ADMIN] getUserIdFromCaregiverProfile - userId fetched', { caregiverProfileId, userId });
+  return userId;
 }
 
 export default router;
