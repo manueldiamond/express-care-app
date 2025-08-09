@@ -125,3 +125,23 @@ export async function getAllPatientsWithAssignments() {
     },
   });
 } 
+
+export async function getPatientByIdWithUser(patientId: number) {
+  return await prisma.patient.findUnique({
+    where: { id: patientId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          fullname: true,
+          role: true,
+          photoUrl: true,
+          contact: true,
+          dateOfBirth: true,
+          location: true,
+        },
+      },
+    },
+  });
+} 

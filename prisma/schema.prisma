@@ -76,7 +76,7 @@ model CaregiverProfile {
   type           String?
   isVerified     Boolean         @default(false)
   isActive       Boolean         @default(false)
-  isAvailable    Boolean         @default(true)
+  isAvailable    Boolean         @default(false)
   schedule       String?
   bio            String?
   educationLevel String?
@@ -160,4 +160,25 @@ model Notification {
   message   String
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Chat {
+  id        Int      @id @default(autoincrement())
+  userAId   Int
+  userBId   Int
+  messages  Message[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userAId, userBId])
+}
+
+model Message {
+  id        Int      @id @default(autoincrement())
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  chatId    Int
+  senderId  Int
+  content   String
+  createdAt DateTime @default(now())
+  read      Boolean  @default(false)
 }

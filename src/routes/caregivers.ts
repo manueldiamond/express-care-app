@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getFilteredCaregivers, updateCaregiver } from '../db';
+import { getCaregiverByCaregiverId, getCaregiverById, getFilteredCaregivers, updateCaregiver } from '../db';
 import { getPublicUrl, upload, handleFileUpload } from '../db/storage';
 import { z } from 'zod';
 import { requireCaregiver } from '../middleware/requireRole';
 import { isCaregiverActive } from '../middleware/isCaregiverActive';
 import caregiverQualificationsRouter from './caregiverQualifications';
 import caregiverVerificationRouter from './caregiverVerification';
+import { mapCaregiverWithPhoto } from '../utils/publicUrlMappings';
 
 const router = Router();
 
@@ -39,7 +40,7 @@ router.get('/', async (req: Request, res: Response) => {
       filters: { search, viewing, limit: limitNum }
     });
 
-    res.json(caregivers);
+    res.json(caregivers.map(c=>mapCaregiverWithPhoto(req,c)));
   } catch (error) {
     console.log('[CAREGIVERS] GET / - Failed to retrieve caregivers', { 
       error: error instanceof Error ? error.message : error 
@@ -48,8 +49,32 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// Get caregiver details by ID
+router.get('/:caregiverId', async (req: Request, res: Response) => {
+  const caregiverId = parseInt(req.params.caregiverId);
+  console.log('[CAREGIVERS] GET /:caregiverId - Request started', { caregiverId, ip: req.ip });
+  if (isNaN(caregiverId)) {
+    console.log('[CAREGIVERS] GET /:caregiverId - Invalid caregiver ID', { caregiverIdParam: req.params.caregiverId });
+    return res.status(400).json({ error: 'Invalid caregiver ID' });
+  }
+  try {
+    let caregiver = await getCaregiverByCaregiverId(caregiverId);
+    caregiver = mapCaregiverWithPhoto(req, caregiver);
+    if (!caregiver) {
+      console.log('[CAREGIVERS] GET /:caregiverId - Caregiver not found', { caregiverId });
+      return res.status(404).json({ error: 'Caregiver not found' });
+    }
+    console.log('[CAREGIVERS] GET /:caregiverId - Caregiver retrieved', { caregiverId });
+    res.json(caregiver);
+  } catch (error) {
+    console.log('[CAREGIVERS] GET /:caregiverId - Error fetching caregiver', { error, caregiverId });
+    res.status(500).json({ error: 'Failed to fetch caregiver' });
+  }
+});
+
 // Nested: /api/caregivers/qualifications
 router.use('/qualifications', caregiverQualificationsRouter);
+
 // Nested: /api/caregivers/verification
 router.use('/verification', caregiverVerificationRouter);
 

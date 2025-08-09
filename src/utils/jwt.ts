@@ -6,12 +6,12 @@ const ACCESS_SECRET = process.env.JWT_SECRET || 'jwtfallback';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refreshfallback';
 
 export function signAccessToken(payload:JWTpayload): string {
-  return jwt.sign(payload, ACCESS_SECRET, { expiresIn: '1m' });
+  return jwt.sign(payload, ACCESS_SECRET, { expiresIn: '30m' });
 }
 
-export function verifyAccessToken(token: string): any | null {
+export function verifyAccessToken(token: string): JWTpayload| null {
   try {
-    return jwt.verify(token, ACCESS_SECRET);
+    return jwt.verify(token, ACCESS_SECRET) as JWTpayload;
   } catch {
     return null;
   }

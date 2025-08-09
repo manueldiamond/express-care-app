@@ -1,9 +1,11 @@
+import * as z from 'zod';
 import prisma from './prisma';
 import { CaregiverProfile, Verification } from '@prisma/client';
+import { updateCaregiverProfileSchema } from '../zod/profileSchemas';
 
 export async function getCaregiverByUserId(userId: number): Promise<CaregiverProfile | null> {
-  return await prisma.caregiverProfile.findUnique({ 
-    where: { userId } 
+  return await prisma.caregiverProfile.findUnique({
+    where: { userId }
   });
 }
 
@@ -25,16 +27,7 @@ export async function createCaregiver(userId: number, data: {
   });
 }
 
-export async function updateCaregiver(userId: number, data: {
-  type?: string;
-  isVerified?: boolean;
-  isActive?: boolean;
-  isAvailable?: boolean;
-  availability?: boolean;
-  timeAvailable?: string;
-  educationLevel?: string;
-  skills?: string[];
-}): Promise<CaregiverProfile> {
+export async function updateCaregiver(userId: number, data: z.infer<typeof updateCaregiverProfileSchema>): Promise<CaregiverProfile> {
   return await prisma.caregiverProfile.update({
     where: { userId },
     data,
@@ -101,9 +94,9 @@ export async function getVerificationByCaregiverProfileId(caregiverProfileId: nu
 
 export async function getAllActiveCaregivers() {
   return await prisma.caregiverProfile.findMany({
-    where: { 
+    where: {
       isActive: true,
-      isAvailable: true 
+      isAvailable: true
     },
     include: {
       user: {
@@ -125,9 +118,9 @@ export async function getAllActiveCaregivers() {
 
 export async function getAllVerifiedCaregivers() {
   return await prisma.caregiverProfile.findMany({
-    where: { 
+    where: {
       isVerified: true,
-      isActive: true 
+      isActive: true
     },
     include: {
       user: {
@@ -155,20 +148,20 @@ export async function getFilteredCaregivers(
 ) {
   // Build where clause based on filters
   const where: any = {};
-  
+
   // For non-admins, always filter out inactive caregivers
   if (!isAdmin) {
     where.isActive = true;
   }
-  
+
   // Filter by availability if requested
   if (viewing === 'available') {
     where.isAvailable = true;
   }
-  
+
   // Add search filter if provided
   if (search && search.trim()) {
-    const searchTerm = search.trim().toLowerCase();
+    const searchTerm = search.trim();
     where.OR = [
       {
         user: {
@@ -199,14 +192,9 @@ export async function getFilteredCaregivers(
         }
       },
       {
-        timeAvailable: {
+        schedule: {
           contains: searchTerm,
           mode: 'insensitive'
-        }
-      },
-      {
-        skills: {
-          hasSome: [searchTerm]
         }
       },
       {
@@ -217,6 +205,7 @@ export async function getFilteredCaregivers(
           }
         }
       }
+      // Note: 'skills' field does not exist in the current CaregiverProfile schema
     ];
   }
 
@@ -236,6 +225,7 @@ export async function getFilteredCaregivers(
         },
       },
       verification: true,
+      qualifications: true,
     },
     orderBy: {
       user: {
@@ -244,7 +234,7 @@ export async function getFilteredCaregivers(
     },
     ...(limit && { take: limit })
   });
-} 
+}
 
 export async function createQualification(caregiverProfileId: number, data: { title: string; fileURL: string }) {
   return await prisma.qualification.create({
@@ -280,7 +270,7 @@ export async function getQualificationById(qualificationId: number) {
   return await prisma.qualification.findUnique({
     where: { id: qualificationId },
   });
-} 
+}
 
 export async function getCaregiverActiveStatus(caregiverId: number) {
   const caregiver = await prisma.caregiverProfile.findUnique({
@@ -294,5 +284,49 @@ export async function setCaregiverActiveStatus(caregiverId: number, isActive: bo
   return await prisma.caregiverProfile.update({
     where: { id: caregiverId },
     data: { isActive }
+  });
+}
+
+// Get caregiver by caregiverId (public version, includes user, verification, assignments, qualifications)
+export async function getCaregiverByCaregiverId(caregiverId: number) {
+  return await prisma.caregiverProfile.findUnique({
+    where: { id: caregiverId },
+    include: {
+      user: { select: { id: true, email: true, fullname: true, role: true, photoUrl: true, contact: true, dateOfBirth: true, location: true } },
+      verification: true,
+      assignments: true,
+      qualifications: true,
+    },
+  });
+}
+
+export async function getAvailableCaregiversForMatching() {
+  return await prisma.caregiverProfile.findMany({
+    where: {
+      isActive: true,
+      isAvailable: true,
+      isVerified: true
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          email: true,
+          fullname: true,
+          role: true,
+          photoUrl: true,
+          contact: true,
+          dateOfBirth: true,
+          location: true,
+        },
+      },
+      qualifications: true,
+      verification: true,
+    },
+    orderBy: {
+      user: {
+        fullname: 'asc'
+      }
+    }
   });
 }

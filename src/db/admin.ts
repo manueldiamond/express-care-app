@@ -147,7 +147,6 @@ export async function approveCaregiver(caregiverId: number, adminId: number): Pr
     },
   });
   // Send notification to caregiver
-  await sendNotification    (updatedCaregiver.userId, "CAREGIVER_APPROVED", "Your caregiver profile has been approved by an admin.");
   return updatedCaregiver;
 }
 
@@ -160,7 +159,6 @@ export async function deactivateCaregiver(caregiverId: number, adminId: number):
     },
   });
   // Send notification to caregiver
-  await sendNotification(updatedCaregiver.userId, "CAREGIVER_REJECTED", "Your caregiver profile has been rejected by an admin.");
   return updatedCaregiver;
 }
 
@@ -269,6 +267,7 @@ export async function getAllCaregiversForAdmin({
         user: true,
         verification: true,
         assignments: true,
+        //qualifications: true,
       },
     });
  
@@ -400,8 +399,8 @@ export async function getCaregiverById(caregiverId: number) {
     include: {
       user:{omit:{passwordHash:true}},
       verification: true,
-      qualifications:true,
       assignments: true,
+      qualifications: true,
     },
   });
 }
@@ -462,7 +461,7 @@ export async function getAllVerifications({
   }
 
   if (type !== 'all') {
-    where.type = type;
+    where.documentType = type;
   }
 
   if (status !== 'all') {
@@ -479,6 +478,7 @@ export async function getAllVerifications({
         caregiverProfile: {
           include: { user: {omit: {passwordHash: true}} },
         },
+        approvedByAdmin:true,
       },
     }),
     prisma.verification.count({ where }),

@@ -10,6 +10,7 @@ export default function requireAuth(req: Request & { user?: any }, res: Response
 
   try {
     const payload = verifyAccessToken(token);
+    console.log(payload);
     if (!payload) throw new Error('Invalid token');
     req.user = payload;
     next();

@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import { requireAdmin } from '../middleware/requireRole';
 import { 
   getAllUsersForAdmin,
   getUserByIdForAdmin,
@@ -24,18 +23,14 @@ import {
   getDashboardStats,
   getReports
 } from '../db/admin';
-import { getFilteredCaregivers } from '../db/caregiver';
 import { createUser } from '../db/user';
-import { AuditAction, CaregiverProfile, Patient, Qualification, User, Verification } from '@prisma/client';
-import { z } from 'zod';
+import { AuditAction } from '@prisma/client';
 import { sendNotification } from '../socket/notifications';
 import { prisma } from '../db';
-import { getPublicUrl } from '../db/storage';
 
 import {
   mapCaregiverWithPhoto,
   mapPatientWithPhoto,
-  mapQualificationWithPhoto,
   mapUserWithPhoto,
   mapVerificationWithPhoto
 } from '../utils/publicUrlMappings'
@@ -67,7 +62,7 @@ async function logAdminAction(
 // Create new user (admin only)
 router.post('/users',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] POST /users - Admin creating new user', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     body: req.body,
     ip: req.ip
   });
@@ -103,7 +98,7 @@ router.post('/users',   async (req: Request & { user?: any }, res: Response) => 
 // Get all users (admin only, paginated)
 router.get('/users', async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /users - Admin requesting all users', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip,
     query: req.query
   });
@@ -154,7 +149,7 @@ router.get('/users', async (req: Request & { user?: any }, res: Response) => {
 router.get('/users/:userId',   async (req: Request & { user?: any }, res: Response) => {
   const userId = parseInt(req.params.userId);
   console.log('[ADMIN] GET /users/:userId - Admin requesting user details', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     targetUserId: userId,
     ip: req.ip
   });
@@ -180,7 +175,7 @@ router.get('/users/:userId',   async (req: Request & { user?: any }, res: Respon
 router.put('/users/:userId',   async (req: Request & { user?: any }, res: Response) => {
   const userId = parseInt(req.params.userId);
   console.log('[ADMIN] PUT /users/:userId - Admin updating user', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     targetUserId: userId,
     body: req.body,
     ip: req.ip
@@ -207,7 +202,7 @@ router.put('/users/:userId',   async (req: Request & { user?: any }, res: Respon
 router.delete('/users/:userId',   async (req: Request & { user?: any }, res: Response) => {
   const userId = parseInt(req.params.userId);
   console.log('[ADMIN] DELETE /users/:userId - Admin deleting user', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     targetUserId: userId,
     ip: req.ip
   });
@@ -228,7 +223,7 @@ router.delete('/users/:userId',   async (req: Request & { user?: any }, res: Res
 // Get all patients (admin only)
 router.get('/patients',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /patients - Admin requesting all patients', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip
   });
 
@@ -275,7 +270,7 @@ router.get('/patients',   async (req: Request & { user?: any }, res: Response) =
 // Get all caregivers (admin only) - Enhanced with filtering
 router.get('/caregivers',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /caregivers - Admin requesting caregivers', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip,
     query: req.query
   });
@@ -324,7 +319,7 @@ router.get('/caregivers',   async (req: Request & { user?: any }, res: Response)
 router.post('/caregivers/:caregiverId/approve',   async (req: Request & { user?: any }, res: Response) => {
   const caregiverId = parseInt(req.params.caregiverId);
   console.log('[ADMIN] POST /caregivers/:caregiverId/approve - Admin approving caregiver', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     caregiverId,
     ip: req.ip
   });
@@ -351,7 +346,7 @@ router.post('/caregivers/:caregiverId/approve',   async (req: Request & { user?:
 router.post('/caregivers/:caregiverId/reject',   async (req: Request & { user?: any }, res: Response) => {
   const caregiverId = parseInt(req.params.caregiverId);
   console.log('[ADMIN] POST /caregivers/:caregiverId/reject - Admin rejecting caregiver', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     caregiverId,
     ip: req.ip
   });
@@ -378,7 +373,7 @@ router.post('/caregivers/:caregiverId/reject',   async (req: Request & { user?: 
 router.post('/verifications/:verificationId/approve',   async (req: Request & { user?: any }, res: Response) => {
   const verificationId = parseInt(req.params.verificationId);
   console.log('[ADMIN] POST /verifications/:verificationId/approve - Admin approving verification', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     verificationId,
     ip: req.ip
   });
@@ -408,7 +403,7 @@ router.post('/verifications/:verificationId/approve',   async (req: Request & { 
 router.post('/verifications/:verificationId/reject',   async (req: Request & { user?: any }, res: Response) => {
   const verificationId = parseInt(req.params.verificationId);
   console.log('[ADMIN] POST /verifications/:verificationId/reject - Admin rejecting verification', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     verificationId,
     ip: req.ip
   });
@@ -437,7 +432,7 @@ router.post('/verifications/:verificationId/reject',   async (req: Request & { u
 // Assign caregiver to patient (admin only)
 router.post('/assignments',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] POST /assignments - Admin creating assignment', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     body: req.body,
     ip: req.ip
   });
@@ -477,7 +472,7 @@ router.delete('/assignments/:caregiverId/:patientId',   async (req: Request & { 
   const patientId = parseInt(req.params.patientId);
   
   console.log('[ADMIN] DELETE /assignments/:caregiverId/:patientId - Admin unassigning caregiver', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     caregiverId,
     patientId,
     ip: req.ip
@@ -509,7 +504,7 @@ router.delete('/assignments/:caregiverId/:patientId',   async (req: Request & { 
 router.get('/patients/:patientId/assignments',   async (req: Request & { user?: any }, res: Response) => {
   const patientId = parseInt(req.params.patientId);
   console.log('[ADMIN] GET /patients/:patientId/assignments - Admin requesting patient assignments', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     patientId,
     ip: req.ip
   });
@@ -537,7 +532,7 @@ router.get('/patients/:patientId/assignments',   async (req: Request & { user?: 
 // Create new admin (admin only)
 router.post('/admins',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] POST /admins - Admin creating new admin', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     body: req.body,
     ip: req.ip
   });
@@ -572,7 +567,7 @@ router.post('/admins',   async (req: Request & { user?: any }, res: Response) =>
 // Get all admins (admin only)
 router.get('/admins',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /admins - Admin requesting all admins', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip
   });
 
@@ -597,7 +592,7 @@ router.get('/admins',   async (req: Request & { user?: any }, res: Response) => 
 // Get audit logs (admin only)
 router.get('/audit-logs',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /audit-logs - Admin requesting audit logs', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip
   });
 
@@ -621,7 +616,7 @@ router.get('/audit-logs',   async (req: Request & { user?: any }, res: Response)
 router.get('/caregivers/:caregiverId',   async (req: Request & { user?: any }, res: Response) => {
   const caregiverId = parseInt(req.params.caregiverId);
   console.log('[ADMIN] GET /caregivers/:caregiverId - Admin requesting caregiver', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     caregiverId,
     ip: req.ip
   });
@@ -644,7 +639,7 @@ router.get('/caregivers/:caregiverId',   async (req: Request & { user?: any }, r
 router.get('/patients/:patientId',   async (req: Request & { user?: any }, res: Response) => {
   const patientId = parseInt(req.params.patientId);
   console.log('[ADMIN] GET /patients/:patientId - Admin requesting patient', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     patientId,
     ip: req.ip
   });
@@ -666,7 +661,7 @@ router.get('/patients/:patientId',   async (req: Request & { user?: any }, res: 
 // Get all assignments
 router.get('/assignments',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /assignments - Admin requesting all assignments', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip
   });
   try {
@@ -683,7 +678,7 @@ router.get('/assignments',   async (req: Request & { user?: any }, res: Response
 // Get all verifications (admin only, paginated)
 router.get('/verifications', async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /verifications - Admin requesting all verifications', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip,
     query: req.query
   });
@@ -730,10 +725,48 @@ router.get('/verifications', async (req: Request & { user?: any }, res: Response
   }
 });
 
+// Get single verification by ID (admin only)
+router.get('/verifications/:verificationId', async (req: Request & { user?: any }, res: Response) => {
+  const verificationId = parseInt(req.params.verificationId);
+  console.log('[ADMIN] GET /verifications/:verificationId - Admin requesting verification', { 
+    adminId: req.user?.adminId,
+    verificationId,
+    ip: req.ip
+  });
+
+  try {
+    // Find verification with related caregiverProfile and user
+    const verification = await prisma.verification.findUnique({
+      where: { id: verificationId },
+      include: {
+        caregiverProfile: {
+          include: { user: { omit: { passwordHash: true } } },
+        },
+        approvedByAdmin: true,
+      },
+    });
+
+    if (!verification) {
+      console.log('[ADMIN] GET /verifications/:verificationId - Verification not found', { verificationId });
+      return res.status(404).json({ error: 'Verification not found' });
+    }
+
+    logAdminAction(req, AuditAction.VIEW_USER_INFO, null, { 
+      action: 'view_verification',
+      verificationId
+    });
+
+    res.json(mapVerificationWithPhoto(req, verification));
+  } catch (error) {
+    console.log('[ADMIN] GET /verifications/:verificationId - Error fetching verification', { error, verificationId });
+    res.status(500).json({ error: 'Failed to fetch verification' });
+  }
+});
+
 // Dashboard stats
 router.get('/dashboard/stats',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /dashboard/stats - Admin requesting dashboard stats', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip
   });
   try {
@@ -749,7 +782,7 @@ router.get('/dashboard/stats',   async (req: Request & { user?: any }, res: Resp
 // Reports
 router.get('/reports',   async (req: Request & { user?: any }, res: Response) => {
   console.log('[ADMIN] GET /reports - Admin requesting reports', { 
-    adminId: req.user?.userId,
+    adminId: req.user?.adminId,
     ip: req.ip
   });
   try {
